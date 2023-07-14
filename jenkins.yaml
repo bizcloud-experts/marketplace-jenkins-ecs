@@ -1,4 +1,7 @@
----
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: BizCloud Experts CloudFormation Template to launch ECS Fargate based Jenkins solution
+
 Parameters:
   Environment:
     Type: String
@@ -64,18 +67,9 @@ Parameters:
     Type: String
     Description: Name of the cloudwatch log group for Jenkins agents
 
-
   EcsClusterName:
     Type: String
     Description: Name of the ECS cluster.
-
-  JenkinsMasterEcrRepoName:
-    Type: String
-    Description: Name of the Master ECR Repository
-
-  JenkinsAgentsEcrRepoName:
-    Type: String
-    Description: Name of the Agent ECR Repository
 
   AlbLogsBucketName:
     Type: String
@@ -83,13 +77,13 @@ Parameters:
 
   JenkinsMasterDockerImage:
     Type: String
-    Default: ""
-    Description: Name of the Master Docker Image, shall be similar to "acc id.dkr.ecr.region.amazonaws.com/ecr repo name:latest".
+    Default: 709825985650.dkr.ecr.us-east-1.amazonaws.com/bizcloud-experts/bce-jenkins-master-repo:version1
+    Description: Name of the Master Docker Image, shall be similar to "acc-id.dkr.ecr.region.amazonaws.com/ecr-repo-name:latest".
 
   JenkinsAgentDockerImage:
     Type: String
-    Default: ""
-    Description: Name of the Master Docker Image, shall be similar to "acc id.dkr.ecr.region.amazonaws.com/ecr repo name:latest".
+    Default: 709825985650.dkr.ecr.us-east-1.amazonaws.com/bizcloud-experts/bce-jenkins-agent-repo:version1
+    Description: Name of the Master Docker Image, shall be similar to "acc-id.dkr.ecr.region.amazonaws.com/ecr-repo-name:latest".
 
   MasterTaskDefinitionName:
     Type: String
@@ -545,18 +539,6 @@ Resources:
     Type: AWS::ECS::Cluster
     Properties:
       ClusterName: !Sub "${EcsClusterName}-${Environment}"
-
-#Ecr Resources
-
-  JenkinsMasterEcrRepo:
-    Type: AWS::ECR::Repository
-    Properties:
-      RepositoryName: !Sub "${JenkinsMasterEcrRepoName}-${Environment}"
-
-  JenkinsAgentsEcrRepo:
-    Type: AWS::ECR::Repository
-    Properties:
-      RepositoryName: !Sub "${JenkinsAgentsEcrRepoName}-${Environment}"
 
 # Alb Resources
 
