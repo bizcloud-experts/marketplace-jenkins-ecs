@@ -1,0 +1,873 @@
+---
+Parameters:
+  Environment:
+    Type: String
+    Description: The Environment name (e.g. dev, test, prod)
+
+  EcsTaskExecRoleName:
+    Type: String
+    Description: Name of the ECS Task Execution IAM Role.
+
+  EcsTaskRoleName:
+    Type: String
+    Description: Name of the ECS Task IAM Role.
+
+  AlbSGName:
+    Type: String
+    Description: Name of the ALB Security Group
+
+  EfsSGName:
+    Type: String
+    Description: Name of the Efs Security Group
+
+  JenkinsMasterSGName:
+    Type: String
+    Description: Name of the Jenkins Master Security Group
+
+  JenkinsAgentSGName:
+    Type: String
+    Description: Name of the Jenkins Agent Security Group
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: ID of the VPC where the resources will be created.
+
+  PrivateSubnetIdA:
+    Type: AWS::EC2::Subnet::Id
+    Description: The Private subnet ID where the EfsMountTargetA will be created in availability zone a.
+
+  PrivateSubnetIdB:
+    Type: AWS::EC2::Subnet::Id
+    Description: The Private subnet ID where the EfsMountTargetB will be created in availability zone b.
+
+  LbPublicSubnetIdA:
+    Type: AWS::EC2::Subnet::Id
+    Description: The Public subnet ID used for Load Balancer in availability zone a.
+
+  LbPublicSubnetIdB:
+    Type: AWS::EC2::Subnet::Id
+    Description: The Public subnet ID used for Load Balancer in availability zone b.
+
+  EfsFileSystemName:
+    Type: String
+    Description: Name of the EFS file system.
+
+  EfsAccessPointName:
+    Type: String
+    Description: Name of the EFS access point.
+
+  JenkinsMasterCWLogGroupName:
+    Type: String
+    Description: Name of the cloudwatch log group for Jenkins master
+
+  JenkinsAgentCWLogGroupName:
+    Type: String
+    Description: Name of the cloudwatch log group for Jenkins agents
+
+
+  EcsClusterName:
+    Type: String
+    Description: Name of the ECS cluster.
+
+  JenkinsMasterEcrRepoName:
+    Type: String
+    Description: Name of the Master ECR Repository
+
+  JenkinsAgentsEcrRepoName:
+    Type: String
+    Description: Name of the Agent ECR Repository
+
+  AlbLogsBucketName:
+    Type: String
+    Description: Name of the S3 Bucket to store Load Balancer access logs
+
+  JenkinsMasterDockerImage:
+    Type: String
+    Default: ""
+    Description: Name of the Master Docker Image, shall be similar to "acc id.dkr.ecr.region.amazonaws.com/ecr repo name:latest".
+
+  JenkinsAgentDockerImage:
+    Type: String
+    Default: ""
+    Description: Name of the Master Docker Image, shall be similar to "acc id.dkr.ecr.region.amazonaws.com/ecr repo name:latest".
+
+  MasterTaskDefinitionName:
+    Type: String
+    Description: Name of the ECS Master task definition.
+
+  AgentTaskDefinitionName:
+    Type: String
+    Description: Name of the ECS Agent task definition.
+
+  Cpu:
+    Type: Number
+    Description: The CPU units to allocate for the task (in MiB).
+    Default: 2048
+
+  Memory:
+    Type: Number
+    Description: The memory units to allocate for the task (in MiB).
+    Default: 4096
+
+  DomainName:
+    Type: String
+    Description: Name of the Domain used to access the Jenkins Interface
+
+  HostedZoneId:
+    Type: String
+    Description: The Hosted zone ID from Route53
+
+  AlbTargetGroupName:
+    Type: String
+    Description: Name of the Load Balancer Target Group
+
+  ApplicationLBName:
+    Type: String
+    Description: Name of the Application Load Balancer
+
+  CloudMapRoutingPolicy:
+    Type: String
+    Default: MULTIVALUE
+    AllowedValues:
+      - MULTIVALUE
+
+  PrivateDnsName:
+    Type: String
+    Description: Private DNS name to be used in CloudMap service
+
+  DiscoveryServiceName:
+    Type: String
+    Description: Name of the CloudMap Service
+
+  EcsServiceDesiredCount:
+    Type: String
+    Description: Desired Count of Ecs Service
+    Default: '0'
+
+  EcsServiceHealthCheckGracePeriodSeconds:
+    Type: String
+    Description: HealthCheckGracePeriodSeconds of Ecs Service
+    Default: '300'
+
+  VpcCidr:
+    Type: String
+    Description: The VPC CIDR range to restrict the JNLP security group ingress rule
+
+  Region:
+    Type: String 
+    Description: Region where the Cloudwatch Log Groups are Created
+    
+Mappings:
+  Region2ElbAccountId:
+    us-east-1:
+      AccountId: '127311923021'
+    us-west-1:
+      AccountId: '027434742980'
+    us-west-2:
+      AccountId: '797873946194'
+    us-east-2:
+      AccountId: '033677994240'
+
+Resources:
+
+#IAM Roles
+
+  ECSTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${EcsTaskExecRoleName}-${Environment}"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      
+      Path: /
+
+
+  ECSTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${EcsTaskRoleName}-${Environment}"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Path: /
+  
+  ECSTaskRolePolicy:
+    Type: AWS::IAM::Policy
+    DependsOn: 
+      - ECSTaskRole
+      - ECSTaskExecutionRole
+    Properties:
+      PolicyName: ecs-policy
+      Roles:
+        - !Ref ECSTaskRole
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - iam:GetRole
+              - iam:PassRole
+            Resource: 
+              - !GetAtt ECSTaskExecutionRole.Arn
+              - !GetAtt ECSTaskRole.Arn
+          - Effect: Allow
+            Action:
+              - ecs:RegisterTaskDefinition
+              - ecs:DescribeContainerInstances
+              - ecs:ListTaskDefinitions
+            Resource:
+              - !Join ['', ['arn:aws:ecs:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':task-definition/*']]
+              - !Join ['', ['arn:aws:ecs:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':cluster/*']]
+              - !Join ['', ['arn:aws:ecs:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':container-instance/*']]
+              - !Join ['', ['arn:aws:ecs:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':task/*']]
+          - Effect: Allow
+            Action:
+              - ecr:GetAuthorizationToken
+              - ecs:ListClusters
+              - ecs:DescribeTaskDefinition
+              - ecs:DeregisterTaskDefinition
+            Resource: "*"
+          - Effect: Allow
+            Action:
+              - ecs:ListContainerInstances
+            Resource: !GetAtt ECSCluster.Arn
+  
+  ECSTaskRoleEFSPermissionPolicy:
+    Type: AWS::IAM::Policy
+    DependsOn: ECSTaskRole
+    Properties:
+      PolicyName: EFSPermissions-Policy
+      Roles:
+        - !Ref ECSTaskRole
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - elasticfilesystem:ClientMount
+              - elasticfilesystem:ClientWrite
+            Resource: !GetAtt EfsFileSystem.Arn
+  
+  ECSTaskRoleECSPermissionPolicy:
+    Type: AWS::IAM::Policy
+    DependsOn: ECSTaskRole
+    Properties:
+      PolicyName: ECSPermissions-Policy
+      Roles:
+        - !Ref ECSTaskRole
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:     
+          - Effect: Allow
+            Action:
+              - ecs:RunTask 
+            Condition:
+              ArnEquals:
+                ecs:cluster:
+                  - !GetAtt ECSCluster.Arn
+            Resource: !Join ['', ['arn:aws:ecs:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':task-definition/*']]
+          - Effect: Allow
+            Action:
+              - ecs:StopTask
+              - ecs:DescribeTasks
+            Condition:
+              ArnEquals:
+                ecs:cluster:
+                  - !GetAtt ECSCluster.Arn
+            Resource: !Join ['', ['arn:aws:ecs:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':task/*']]
+
+#Security Groups
+
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub "${AlbSGName}-${Environment}"
+      GroupDescription: Security group for ALB
+      VpcId: !Ref VpcId
+      
+  
+
+  EfsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub "${EfsSGName}-${Environment}"
+      GroupDescription: "Security group for Efs"
+      VpcId: !Ref VpcId
+      
+    
+
+  JenkinsMasterSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub "${JenkinsMasterSGName}-${Environment}"
+      GroupDescription: "Security group for Jenkins master"
+      VpcId: !Ref VpcId
+     
+      
+
+  JenkinsAgentSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub "${JenkinsAgentSGName}-${Environment}"
+      GroupDescription: "Security group for Jenkins agents"
+      VpcId: !Ref VpcId
+
+
+#Security Groups Egress Ingress Rules
+
+  AlbSgtoJenkinsMasterSgEgress:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      IpProtocol: tcp
+      FromPort: 8080
+      ToPort: 8080
+      DestinationSecurityGroupId:
+        Fn::GetAtt:
+          - JenkinsMasterSecurityGroup
+          - GroupId
+      GroupId:
+        Fn::GetAtt:
+          - AlbSecurityGroup
+          - GroupId
+
+  AlbSg443Ingress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      CidrIp: 0.0.0.0/0
+      GroupId:
+        Fn::GetAtt:
+          - AlbSecurityGroup
+          - GroupId
+
+
+  AlbSg80Ingress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      IpProtocol: tcp
+      FromPort: 80
+      ToPort: 80
+      CidrIp: 0.0.0.0/0
+      GroupId:
+        Fn::GetAtt:
+          - AlbSecurityGroup
+          - GroupId
+
+         
+  EfsSgfromJenkinsAgentSgIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties: 
+      IpProtocol: tcp
+      FromPort: 2049
+      ToPort: 2049
+      SourceSecurityGroupId:
+        Fn::GetAtt:
+          - JenkinsAgentSecurityGroup
+          - GroupId
+      GroupId:
+        Fn::GetAtt:
+          - EfsSecurityGroup
+          - GroupId
+
+
+  EfsSgfromJenkinsMasterSgIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:        
+      IpProtocol: tcp
+      FromPort: 2049
+      ToPort: 2049
+      SourceSecurityGroupId:
+        Fn::GetAtt:
+          - JenkinsMasterSecurityGroup
+          - GroupId
+      GroupId:
+        Fn::GetAtt:
+          - EfsSecurityGroup
+          - GroupId
+
+
+  JenkinsMasterSgfromJenkinsAgentSgIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      IpProtocol: tcp
+      FromPort: 50000
+      ToPort: 50000
+      SourceSecurityGroupId:
+        Fn::GetAtt:
+          - JenkinsAgentSecurityGroup
+          - GroupId
+      GroupId:
+        Fn::GetAtt:
+          - JenkinsMasterSecurityGroup
+          - GroupId
+
+  JenkinsMasterSgfromAlbSgIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      IpProtocol: tcp
+      FromPort: 8080
+      ToPort: 8080
+      SourceSecurityGroupId:
+        Fn::GetAtt:
+          - AlbSecurityGroup
+          - GroupId
+      GroupId:
+        Fn::GetAtt:
+          - JenkinsMasterSecurityGroup
+          - GroupId
+
+  JenkinsMasterJNLPIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      IpProtocol: tcp
+      FromPort: 8080
+      ToPort: 8080
+      CidrIp: !Ref VpcCidr
+      GroupId:
+        Fn::GetAtt:
+          - JenkinsMasterSecurityGroup
+          - GroupId
+
+
+#Efs Resources
+
+  EfsFileSystem:
+    Type: 'AWS::EFS::FileSystem'
+    Properties:
+      Encrypted: true
+      BackupPolicy:
+        Status: ENABLED
+      FileSystemTags:
+        - Key: Name
+          Value: !Ref EfsFileSystemName
+
+  EfsAccessPoint:
+    Type: 'AWS::EFS::AccessPoint'
+    DependsOn: EfsFileSystem
+    Properties:
+      FileSystemId: !Ref EfsFileSystem
+      PosixUser:
+        Uid: '1000'
+        Gid: '1000'
+      RootDirectory:
+        CreationInfo:
+          OwnerGid: '1000'
+          OwnerUid: '1000'
+          Permissions: '755'
+        Path: '/var/jenkins_home'
+      AccessPointTags:
+        - Key: Name
+          Value: !Ref EfsAccessPointName
+
+  EfsMountTargetA:
+    Type: 'AWS::EFS::MountTarget'
+    DependsOn: 
+      - EfsFileSystem
+      - EfsSecurityGroup
+    Properties:
+      FileSystemId: !Ref EfsFileSystem
+      SubnetId: !Ref PrivateSubnetIdA
+      SecurityGroups:
+        - Ref: EfsSecurityGroup
+
+  EfsMountTargetB:
+    Type: 'AWS::EFS::MountTarget'
+    DependsOn: 
+      - EfsFileSystem
+      - EfsSecurityGroup
+    Properties:
+      FileSystemId: !Ref EfsFileSystem
+      SubnetId: !Ref PrivateSubnetIdB
+      SecurityGroups:
+        - Ref: EfsSecurityGroup
+
+#S3 Resources
+
+  AlbS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${AlbLogsBucketName}-${Environment}"
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+
+  S3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    DependsOn: AlbS3Bucket
+    Properties:
+      Bucket: !Sub "${AlbLogsBucketName}-${Environment}"
+      PolicyDocument:
+        Version: '2008-10-17'
+        Statement:
+          - Sid: AllowLBAccessLogs
+            Effect: Allow
+            Resource:
+              - !Sub "arn:aws:s3:::${AlbLogsBucketName}-${Environment}/jenkins-lb-access-logs/AWSLogs/${AWS::AccountId}/*"
+            Principal:
+              AWS: !FindInMap
+                - Region2ElbAccountId
+                - !Ref 'AWS::Region'
+                - AccountId
+            Action:
+              - 's3:PutObject'
+
+            
+
+#CWLG Resources
+
+  JenkinsMasterCWLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "${JenkinsMasterCWLogGroupName}-${Environment}"
+  JenkinsAgentCWLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "${JenkinsAgentCWLogGroupName}-${Environment}"
+        
+#Ecs Resources
+
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub "${EcsClusterName}-${Environment}"
+
+#Ecr Resources
+
+  JenkinsMasterEcrRepo:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub "${JenkinsMasterEcrRepoName}-${Environment}"
+
+  JenkinsAgentsEcrRepo:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub "${JenkinsAgentsEcrRepoName}-${Environment}"
+
+# Alb Resources
+
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    DependsOn: 
+      - AlbS3Bucket
+      - AlbSecurityGroup
+    Properties:
+      LoadBalancerAttributes:
+        - Key: access_logs.s3.enabled
+          Value: "true"
+        - Key: access_logs.s3.bucket
+          Value: !Ref AlbS3Bucket
+        - Key: access_logs.s3.prefix
+          Value: jenkins-lb-access-logs
+      Name: !Sub "${ApplicationLBName}-${Environment}"
+      Scheme: internet-facing
+      SecurityGroups:
+        - !Ref AlbSecurityGroup
+      Subnets:
+        - !Ref LbPublicSubnetIdA
+        - !Ref LbPublicSubnetIdB
+
+  AlbTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    DependsOn: ApplicationLoadBalancer
+    Properties:
+      HealthCheckPath: /login
+      Protocol: HTTP
+      Name: !Ref AlbTargetGroupName
+      Port: 8080
+      TargetType: ip
+      VpcId: !Ref VpcId
+
+  AlbHTTPListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    DependsOn: ApplicationLoadBalancer
+    Properties:
+      DefaultActions:
+        - Type: redirect
+          RedirectConfig:
+            Protocol: HTTPS
+            Port: '443'
+            StatusCode: HTTP_301
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+  AlbACMCertificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !Ref DomainName
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName: !Ref DomainName 
+          HostedZoneId: !Ref HostedZoneId
+
+  AlbHTTPSListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    DependsOn:
+      - AlbACMCertificate
+      - AlbTargetGroup
+      - ApplicationLoadBalancer
+    Properties:
+      Certificates:
+        - CertificateArn: !Ref AlbACMCertificate
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref AlbTargetGroup
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 443
+      Protocol: HTTPS
+
+
+#Ecs Task Definition
+
+  ECSJenkinsMasterTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    DependsOn:
+      - ECSTaskExecutionRole
+      - ECSTaskRole
+      - JenkinsMasterCWLogGroup
+    Properties:
+      Family: !Sub "${MasterTaskDefinitionName}-${Environment}"
+      Cpu: !Ref Cpu
+      Memory: !Ref Memory
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+        - EC2
+      ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt ECSTaskRole.Arn
+      ContainerDefinitions:
+        - Name: jenkins
+          Image: !Ref JenkinsMasterDockerImage
+          PortMappings:
+            - ContainerPort: 50000
+            - ContainerPort: 8080
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref JenkinsMasterCWLogGroup
+              awslogs-region: !Ref Region
+              awslogs-stream-prefix: master
+          MountPoints:
+            - ContainerPath: /var/jenkins_home
+              SourceVolume: jenkins-home
+        
+      Volumes:
+        - Name: jenkins-home
+          EFSVolumeConfiguration:
+            FilesystemId: !Ref EfsFileSystem
+            TransitEncryption: "ENABLED"
+            AuthorizationConfig:
+              AccessPointId: !Ref EfsAccessPoint
+              IAM: "ENABLED"
+
+
+  ECSJenkinsAgentTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    DependsOn:
+      - ECSTaskExecutionRole
+      - ECSTaskRole
+      - JenkinsAgentCWLogGroup
+    Properties:
+      Family: !Sub "${AgentTaskDefinitionName}-${Environment}"
+      Cpu: !Ref Cpu
+      Memory: !Ref Memory
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+        - EC2
+      ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt ECSTaskRole.Arn
+      ContainerDefinitions:
+        - Name: jenkins
+          Image: !Ref JenkinsAgentDockerImage
+          PortMappings:
+            - ContainerPort: 50000
+            - ContainerPort: 8080
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref JenkinsAgentCWLogGroup
+              awslogs-region: !Ref Region
+              awslogs-stream-prefix: agents
+          MountPoints:
+            - ContainerPath: /var/jenkins_home
+              SourceVolume: jenkins-home
+        
+      Volumes:
+        - Name: jenkins-home
+          EFSVolumeConfiguration:
+            FilesystemId: !Ref EfsFileSystem
+            TransitEncryption: "ENABLED"
+            AuthorizationConfig:
+              AccessPointId: !Ref EfsAccessPoint
+              IAM: "ENABLED"
+
+#CloudMap Service Discovery
+
+  Namespace:
+    Type: AWS::ServiceDiscovery::PrivateDnsNamespace
+    Properties: 
+      Name: !Ref PrivateDnsName
+      Tags:
+        -
+          Key: Name
+          Value: !Sub "bce-aws-mp-jenkins-dns-${Environment}"
+      Vpc: !Ref VpcId
+
+  DiscoveryService:
+    Type: AWS::ServiceDiscovery::Service
+    DependsOn: Namespace
+    Properties: 
+      DnsConfig:
+        DnsRecords:
+          - TTL: 60
+            Type: A
+          - TTL: 60
+            Type: SRV
+        RoutingPolicy: !Ref CloudMapRoutingPolicy
+      Name: !Ref DiscoveryServiceName
+      NamespaceId: !Ref Namespace
+
+
+# ECS Service
+
+  ECSService:
+    Type: AWS::ECS::Service
+    DependsOn: 
+      - ApplicationLoadBalancer
+      - ECSJenkinsMasterTaskDefinition
+      - JenkinsMasterSecurityGroup
+      - DiscoveryService
+      - AlbTargetGroup
+      - AlbHTTPSListener
+    Properties:
+      Cluster: !Sub "${EcsClusterName}-${Environment}"
+      TaskDefinition: !Ref ECSJenkinsMasterTaskDefinition
+      DesiredCount: !Ref EcsServiceDesiredCount
+      HealthCheckGracePeriodSeconds: !Ref EcsServiceHealthCheckGracePeriodSeconds
+      LaunchType: FARGATE
+      PlatformVersion: '1.4.0'
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 0
+        MaximumPercent: 100
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          Subnets:
+            - !Ref PrivateSubnetIdA
+            - !Ref PrivateSubnetIdB
+          SecurityGroups:
+            - !Ref JenkinsMasterSecurityGroup
+      ServiceRegistries:
+        - RegistryArn: !GetAtt DiscoveryService.Arn
+          Port: 50000
+      LoadBalancers:
+        - ContainerName: jenkins
+          ContainerPort: 8080
+          TargetGroupArn: !Ref AlbTargetGroup
+
+
+Outputs:
+  ECSTaskExecutionRoleArn:
+    Value: !GetAtt ECSTaskExecutionRole.Arn
+
+  ECSTaskRoleArn:
+    Value: !GetAtt ECSTaskRole.Arn
+
+  AlbSecurityGroupId:
+    Description: The ID of the Alb Security Group
+    Value: !Ref AlbSecurityGroup
+
+  EfsSecurityGroupId:
+    Description: The ID of the EFS Security Group
+    Value: !Ref EfsSecurityGroup
+
+  JenkinsMasterSecurityGroupId:
+    Description: The ID of the Jenkins Master Security Group
+    Value: !Ref JenkinsMasterSecurityGroup
+
+  JenkinsAgentSecurityGroupId:
+    Description: The ID of the Jenkins Master Security Group
+    Value: !Ref JenkinsAgentSecurityGroup
+
+  EfsFileSystemARN:
+    Description: The ID of the EFS file system.
+    Value: !GetAtt EfsFileSystem.Arn
+
+  EfsAccessPointArn:
+    Description: The ARN of the EFS access point.
+    Value: !GetAtt EfsAccessPoint.Arn
+
+  EfsMountTargetAId:
+    Description: The ID of the EFS mount target in PrivateSubnetA.
+    Value: !Ref EfsMountTargetA
+
+  EfsMountTargetBId:
+    Description: The ID of the EFS mount target in PrivateSubnetB.
+    Value: !Ref EfsMountTargetB
+
+  JenkinsMasterCWLogGroupId:
+    Value: !Ref JenkinsMasterCWLogGroup
+
+  JenkinsAgentCWLogGroupId:
+    Value: !Ref JenkinsAgentCWLogGroup
+
+  ClusterArn:
+    Description: The ARN of the ECS cluster.
+    Value: !Ref ECSCluster
+
+  S3BucketArn:
+    Value: !Ref AlbS3Bucket
+
+  ECSJenkinsMasterTaskDefinitionId:
+    Description: The ARN of the ECS task definition.
+    Value: !Ref ECSJenkinsMasterTaskDefinition
+
+  ECSJenkinsAgentTaskDefinitionId:
+    Description: The ARN of the ECS task definition.
+    Value: !Ref ECSJenkinsAgentTaskDefinition
+
+  ApplicationLoadBalancerArn:
+    Value: !Ref ApplicationLoadBalancer
+
+  ApplicationLoadBalancerDNSName:
+    Value: !GetAtt ApplicationLoadBalancer.DNSName
+
+  AlbTargetGroupArn:
+    Value: !Ref AlbTargetGroup
+
+  AlbTargetGroupName:
+    Value: !Ref AlbTargetGroupName
+  
+  AlbHTTPListenerArn:
+    Value: !Ref AlbHTTPListener
+
+  AlbHTTPSListenerArn:
+    Value: !Ref AlbHTTPSListener
+  
+  NameSpaceId:
+    Value: !Ref Namespace
+
+  NameSpaceArn:  
+    Value: !GetAtt Namespace.Arn
+
+  DiscoveryServiceId:
+    Value: !Ref DiscoveryService
+
+  DiscoveryServiceArn:
+    Value: !GetAtt DiscoveryService.Arn
