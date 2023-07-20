@@ -75,15 +75,15 @@ Parameters:
     Type: String
     Description: Name of the S3 Bucket to store Load Balancer access logs
 
-  JenkinsMasterDockerImage:
-    Type: String
-    Default: 709825985650.dkr.ecr.us-east-1.amazonaws.com/bizcloud-experts/bce-jenkins-master-repo:version1
-    Description: Name of the Master Docker Image, shall be similar to "acc-id.dkr.ecr.region.amazonaws.com/ecr-repo-name:latest".
+  # JenkinsMasterDockerImage:
+  #   Type: String
+  #   Default: 709825985650.dkr.ecr.us-east-1.amazonaws.com/bizcloud-experts/bce-jenkins-master-repo:version2
+  #   Description: Name of the Master Docker Image, shall be similar to "acc-id.dkr.ecr.region.amazonaws.com/ecr-repo-name:latest".
 
-  JenkinsAgentDockerImage:
-    Type: String
-    Default: 709825985650.dkr.ecr.us-east-1.amazonaws.com/bizcloud-experts/bce-jenkins-agent-repo:version1
-    Description: Name of the Master Docker Image, shall be similar to "acc-id.dkr.ecr.region.amazonaws.com/ecr-repo-name:latest".
+  # JenkinsAgentDockerImage:
+  #   Type: String
+  #   Default: 709825985650.dkr.ecr.us-east-1.amazonaws.com/bizcloud-experts/bce-jenkins-agent-repo:version2
+  #   Description: Name of the Master Docker Image, shall be similar to "acc-id.dkr.ecr.region.amazonaws.com/ecr-repo-name:latest".
 
   MasterTaskDefinitionName:
     Type: String
@@ -634,7 +634,8 @@ Resources:
       TaskRoleArn: !GetAtt ECSTaskRole.Arn
       ContainerDefinitions:
         - Name: jenkins
-          Image: !Ref JenkinsMasterDockerImage
+          # Image: !Ref JenkinsMasterDockerImage
+          Image: 709825985650.dkr.ecr.us-east-1.amazonaws.com/bizcloud-experts/bce-jenkins-master-repo:version2
           PortMappings:
             - ContainerPort: 50000
             - ContainerPort: 8080
@@ -676,7 +677,8 @@ Resources:
       TaskRoleArn: !GetAtt ECSTaskRole.Arn
       ContainerDefinitions:
         - Name: jenkins
-          Image: !Ref JenkinsAgentDockerImage
+          # Image: !Ref JenkinsAgentDockerImage
+          Image: 709825985650.dkr.ecr.us-east-1.amazonaws.com/bizcloud-experts/bce-jenkins-agent-repo:version2
           PortMappings:
             - ContainerPort: 50000
             - ContainerPort: 8080
