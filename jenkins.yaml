@@ -75,16 +75,6 @@ Parameters:
     Type: String
     Description: Name of the S3 Bucket to store Load Balancer access logs
 
-  # JenkinsMasterDockerImage:
-  #   Type: String
-  #   Default: 709825985650.dkr.ecr.us-east-1.amazonaws.com/bizcloud-experts/bce-jenkins-master-repo:version2
-  #   Description: Name of the Master Docker Image, shall be similar to "acc-id.dkr.ecr.region.amazonaws.com/ecr-repo-name:latest".
-
-  # JenkinsAgentDockerImage:
-  #   Type: String
-  #   Default: 709825985650.dkr.ecr.us-east-1.amazonaws.com/bizcloud-experts/bce-jenkins-agent-repo:version2
-  #   Description: Name of the Master Docker Image, shall be similar to "acc-id.dkr.ecr.region.amazonaws.com/ecr-repo-name:latest".
-
   MasterTaskDefinitionName:
     Type: String
     Description: Name of the ECS Master task definition.
@@ -136,7 +126,7 @@ Parameters:
   EcsServiceDesiredCount:
     Type: String
     Description: Desired Count of Ecs Service
-    Default: '0'
+    Default: '1'
 
   EcsServiceHealthCheckGracePeriodSeconds:
     Type: String
@@ -163,9 +153,7 @@ Mappings:
       AccountId: '033677994240'
 
 Resources:
-
-#IAM Roles
-
+  #IAM Roles
   ECSTaskExecutionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -181,7 +169,6 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
       
       Path: /
-
 
   ECSTaskRole:
     Type: AWS::IAM::Role
@@ -231,6 +218,7 @@ Resources:
               - ecs:ListClusters
               - ecs:DescribeTaskDefinition
               - ecs:DeregisterTaskDefinition
+              - aws-marketplace:*
             Resource: "*"
           - Effect: Allow
             Action:
@@ -281,16 +269,13 @@ Resources:
                   - !GetAtt ECSCluster.Arn
             Resource: !Join ['', ['arn:aws:ecs:', !Ref 'AWS::Region', ':', !Ref 'AWS::AccountId', ':task/*']]
 
-#Security Groups
-
+  #Security Groups
   AlbSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupName: !Sub "${AlbSGName}-${Environment}"
       GroupDescription: Security group for ALB
       VpcId: !Ref VpcId
-      
-  
 
   EfsSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -298,8 +283,6 @@ Resources:
       GroupName: !Sub "${EfsSGName}-${Environment}"
       GroupDescription: "Security group for Efs"
       VpcId: !Ref VpcId
-      
-    
 
   JenkinsMasterSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -307,8 +290,6 @@ Resources:
       GroupName: !Sub "${JenkinsMasterSGName}-${Environment}"
       GroupDescription: "Security group for Jenkins master"
       VpcId: !Ref VpcId
-     
-      
 
   JenkinsAgentSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -317,9 +298,7 @@ Resources:
       GroupDescription: "Security group for Jenkins agents"
       VpcId: !Ref VpcId
 
-
-#Security Groups Egress Ingress Rules
-
+  #Security Groups Egress Ingress Rules
   AlbSgtoJenkinsMasterSgEgress:
     Type: AWS::EC2::SecurityGroupEgress
     Properties:
@@ -347,7 +326,6 @@ Resources:
           - AlbSecurityGroup
           - GroupId
 
-
   AlbSg80Ingress:
     Type: AWS::EC2::SecurityGroupIngress
     Properties:
@@ -359,7 +337,6 @@ Resources:
         Fn::GetAtt:
           - AlbSecurityGroup
           - GroupId
-
          
   EfsSgfromJenkinsAgentSgIngress:
     Type: AWS::EC2::SecurityGroupIngress
@@ -376,7 +353,6 @@ Resources:
           - EfsSecurityGroup
           - GroupId
 
-
   EfsSgfromJenkinsMasterSgIngress:
     Type: AWS::EC2::SecurityGroupIngress
     Properties:        
@@ -391,7 +367,6 @@ Resources:
         Fn::GetAtt:
           - EfsSecurityGroup
           - GroupId
-
 
   JenkinsMasterSgfromJenkinsAgentSgIngress:
     Type: AWS::EC2::SecurityGroupIngress
@@ -435,9 +410,7 @@ Resources:
           - JenkinsMasterSecurityGroup
           - GroupId
 
-
-#Efs Resources
-
+  #Efs Resources
   EfsFileSystem:
     Type: 'AWS::EFS::FileSystem'
     Properties:
@@ -488,8 +461,7 @@ Resources:
       SecurityGroups:
         - Ref: EfsSecurityGroup
 
-#S3 Resources
-
+  #S3 Resources
   AlbS3Bucket:
     Type: AWS::S3::Bucket
     Properties:
@@ -498,7 +470,6 @@ Resources:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
               SSEAlgorithm: AES256
-
 
   S3BucketPolicy:
     Type: AWS::S3::BucketPolicy
@@ -520,28 +491,24 @@ Resources:
             Action:
               - 's3:PutObject'
 
-            
-
-#CWLG Resources
-
+  #CWLG Resources
   JenkinsMasterCWLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Sub "${JenkinsMasterCWLogGroupName}-${Environment}"
+  
   JenkinsAgentCWLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Sub "${JenkinsAgentCWLogGroupName}-${Environment}"
         
-#Ecs Resources
-
+  #Ecs Resources
   ECSCluster:
     Type: AWS::ECS::Cluster
     Properties:
       ClusterName: !Sub "${EcsClusterName}-${Environment}"
 
-# Alb Resources
-
+  #Alb Resources
   ApplicationLoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     DependsOn: 
@@ -613,9 +580,18 @@ Resources:
       Port: 443
       Protocol: HTTPS
 
+  #Record Set
+  RecordSet:
+    Type: AWS::Route53::RecordSet
+    Properties: 
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref DomainName
+      ResourceRecords:
+      - !GetAtt ApplicationLoadBalancer.DNSName
+      Type: CNAME
+      TTL: 300
 
-#Ecs Task Definition
-
+  #Ecs Task Definition
   ECSJenkinsMasterTaskDefinition:
     Type: AWS::ECS::TaskDefinition
     DependsOn:
@@ -634,8 +610,10 @@ Resources:
       TaskRoleArn: !GetAtt ECSTaskRole.Arn
       ContainerDefinitions:
         - Name: jenkins
-          # Image: !Ref JenkinsMasterDockerImage
-          Image: 709825985650.dkr.ecr.us-east-1.amazonaws.com/bizcloud-experts/bce-jenkins-master-repo:version2
+          Image: 709825985650.dkr.ecr.us-east-1.amazonaws.com/bizcloud-experts/bce-jenkins-master-repo:30
+          Environment:
+            - Name: AWS_REGION
+              Value: !Ref 'AWS::Region'
           PortMappings:
             - ContainerPort: 50000
             - ContainerPort: 8080
@@ -658,7 +636,6 @@ Resources:
               AccessPointId: !Ref EfsAccessPoint
               IAM: "ENABLED"
 
-
   ECSJenkinsAgentTaskDefinition:
     Type: AWS::ECS::TaskDefinition
     DependsOn:
@@ -677,8 +654,10 @@ Resources:
       TaskRoleArn: !GetAtt ECSTaskRole.Arn
       ContainerDefinitions:
         - Name: jenkins
-          # Image: !Ref JenkinsAgentDockerImage
-          Image: 709825985650.dkr.ecr.us-east-1.amazonaws.com/bizcloud-experts/bce-jenkins-agent-repo:version2
+          Image: 709825985650.dkr.ecr.us-east-1.amazonaws.com/bizcloud-experts/bce-jenkins-agent-repo:30
+          Environment:
+            - Name: AWS_REGION
+              Value: !Ref 'AWS::Region'
           PortMappings:
             - ContainerPort: 50000
             - ContainerPort: 8080
@@ -701,8 +680,7 @@ Resources:
               AccessPointId: !Ref EfsAccessPoint
               IAM: "ENABLED"
 
-#CloudMap Service Discovery
-
+  #CloudMap Service Discovery
   Namespace:
     Type: AWS::ServiceDiscovery::PrivateDnsNamespace
     Properties: 
@@ -727,9 +705,7 @@ Resources:
       Name: !Ref DiscoveryServiceName
       NamespaceId: !Ref Namespace
 
-
-# ECS Service
-
+  #ECS Service
   ECSService:
     Type: AWS::ECS::Service
     DependsOn: 
@@ -764,7 +740,6 @@ Resources:
         - ContainerName: jenkins
           ContainerPort: 8080
           TargetGroupArn: !Ref AlbTargetGroup
-
 
 Outputs:
   ECSTaskExecutionRoleArn:
@@ -855,3 +830,6 @@ Outputs:
 
   DiscoveryServiceArn:
     Value: !GetAtt DiscoveryService.Arn
+  
+  JenkinsUrl:
+    Value: !Ref RecordSet
